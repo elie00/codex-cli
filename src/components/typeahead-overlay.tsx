@@ -115,11 +115,11 @@ export default function TypeaheadOverlay({
     <Box
       flexDirection="column"
       borderStyle="round"
-      borderColor="gray"
+      borderColor="greenBright"
       width={80}
     >
       <Box paddingX={1}>
-        <Text bold>{title}</Text>
+        <Text bold color="greenBright">{title}</Text>
       </Box>
 
       <Box flexDirection="column" paddingX={1} gap={1}>
@@ -156,7 +156,7 @@ export default function TypeaheadOverlay({
 
       <Box paddingX={1}>
         {/* Slightly more verbose footer to make the search behaviour crystal‑clear */}
-        <Text dimColor>type to search · enter to confirm · esc to cancel</Text>
+        <Text color="green">type to search · enter to confirm · esc to cancel</Text>
       </Box>
     </Box>
   );

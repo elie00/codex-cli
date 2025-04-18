@@ -17,6 +17,7 @@ import { dirname, join, extname, resolve as resolvePath } from "path";
 
 export const DEFAULT_AGENTIC_MODEL = "o4-mini";
 export const DEFAULT_FULL_CONTEXT_MODEL = "gpt-4.1";
+export const DEFAULT_OLLAMA_MODEL = "gemma3:4b";
 export const DEFAULT_APPROVAL_MODE = AutoApprovalMode.SUGGEST;
 export const DEFAULT_INSTRUCTIONS = "";
 
@@ -31,13 +32,33 @@ export const CONFIG_YML_FILEPATH = join(CONFIG_DIR, "config.yml");
 export const CONFIG_FILEPATH = CONFIG_JSON_FILEPATH;
 export const INSTRUCTIONS_FILEPATH = join(CONFIG_DIR, "instructions.md");
 
-export const OPENAI_TIMEOUT_MS =
-  parseInt(process.env["OPENAI_TIMEOUT_MS"] || "0", 10) || undefined;
-export const OPENAI_BASE_URL = process.env["OPENAI_BASE_URL"] || "";
-export let OPENAI_API_KEY = process.env["OPENAI_API_KEY"] || "";
+// Configuration commune pour tous les fournisseurs
+export const PROVIDER_TIMEOUT_MS =
+  parseInt(process.env["PROVIDER_TIMEOUT_MS"] || process.env["OPENAI_TIMEOUT_MS"] || "0", 10) || undefined;
+
+// Configurations spécifiques par fournisseur
+export const PROVIDER_CONFIGS = {
+  ollama: {
+    baseURL: process.env["OLLAMA_BASE_URL"] || "http://localhost:11434/api",
+  },
+  huggingface: {
+    baseURL: process.env["HUGGINGFACE_BASE_URL"] || "http://localhost:8080",
+    apiKey: process.env["HUGGINGFACE_API_KEY"] || "",
+  },
+  openai: {
+    baseURL: process.env["OPENAI_BASE_URL"] || "https://api.openai.com/v1",
+    apiKey: process.env["OPENAI_API_KEY"] || "dummy-key", // Clé factice pour éviter les erreurs
+  }
+};
+
+// Fonctions de compatibilité - maintenues pour compatibilité avec l'existant
+export const OPENAI_TIMEOUT_MS = PROVIDER_TIMEOUT_MS;
+export const OPENAI_BASE_URL = PROVIDER_CONFIGS.openai.baseURL;
+export let OPENAI_API_KEY = PROVIDER_CONFIGS.openai.apiKey;
 
 export function setApiKey(apiKey: string): void {
-  OPENAI_API_KEY = apiKey;
+  // Ne fait rien, car OpenAI est désactivé
+  console.warn('Le fournisseur OpenAI est désactivé, setApiKey n\'a aucun effet.');
 }
 
 // Formatting (quiet mode-only).
@@ -58,9 +79,12 @@ export type StoredConfig = {
 // Minimal config written on first run.  An *empty* model string ensures that
 // we always fall back to DEFAULT_MODEL on load, so updates to the default keep
 // propagating to existing users until they explicitly set a model.
-export const EMPTY_STORED_CONFIG: StoredConfig = { model: "" };
+export const EMPTY_STORED_CONFIG: StoredConfig = { 
+  model: "",
+  providerType: "ollama" // Par défaut, utiliser Ollama
+};
 
-// Pre‑stringified JSON variant so we don’t stringify repeatedly.
+// Pre‑stringified JSON variant so we don't stringify repeatedly.
 const EMPTY_CONFIG_JSON = JSON.stringify(EMPTY_STORED_CONFIG, null, 2) + "\n";
 
 export type MemoryConfig = {
@@ -154,7 +178,7 @@ export function loadProjectDoc(cwd: string, explicitPath?: string): string {
     if (buf.byteLength > PROJECT_DOC_MAX_BYTES) {
       // eslint-disable-next-line no-console
       console.warn(
-        `codex: project doc '${filepath}' exceeds ${PROJECT_DOC_MAX_BYTES} bytes – truncating.`,
+        `codex: document projet '${filepath}' dépasse ${PROJECT_DOC_MAX_BYTES} octets – troncature appliquée.`,
       );
     }
     return buf.slice(0, PROJECT_DOC_MAX_BYTES).toString("utf-8");
@@ -231,12 +255,12 @@ export const loadConfig = (
     if (projectDocPath) {
       if (isLoggingEnabled()) {
         log(
-          `[codex] Loaded project doc from ${projectDocPath} (${projectDoc.length} bytes)`,
+          `[codex] Document projet chargé depuis ${projectDocPath} (${projectDoc.length} octets)`,
         );
       }
     } else {
       if (isLoggingEnabled()) {
-        log(`[codex] No project doc found in ${cwd}`);
+        log(`[codex] Aucun document projet trouvé dans ${cwd}`);
       }
     }
   }
@@ -252,14 +276,20 @@ export const loadConfig = (
       ? storedConfig.model.trim()
       : undefined;
 
+  // Détermine le modèle par défaut selon le fournisseur
+  let defaultModel = DEFAULT_AGENTIC_MODEL;
+  const providerType = storedConfig.providerType || 'ollama';
+  
+  if (options.isFullContext) {
+    defaultModel = DEFAULT_FULL_CONTEXT_MODEL;
+  } else if (providerType === 'ollama') {
+    defaultModel = DEFAULT_OLLAMA_MODEL;
+  }
+
   const config: AppConfig = {
-    model:
-      storedModel ??
-      (options.isFullContext
-        ? DEFAULT_FULL_CONTEXT_MODEL
-        : DEFAULT_AGENTIC_MODEL),
+    model: storedModel ?? defaultModel,
     instructions: combinedInstructions,
-    providerType: storedConfig.providerType || 'openai',
+    providerType: providerType,
     providerUrl: storedConfig.providerUrl,
   };
 

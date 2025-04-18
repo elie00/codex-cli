@@ -1,9 +1,9 @@
 {
-  "name": "@eybo/codex-cli",
-  "version": "0.1.2504161510",
+  "name": "eybo-codex-cli",
+  "version": "1.0.2",
   "license": "Apache-2.0",
   "bin": {
-    "codex": "dist/cli.js"
+    "codex-cli": "dist/cli.js"
   },
   "type": "module",
   "engines": {
@@ -20,16 +20,23 @@
     "typecheck": "tsc --noEmit",
     "build": "node build.mjs",
     "build:dev": "NODE_ENV=development node build.mjs --dev && NODE_OPTIONS=--enable-source-maps node dist/cli-dev.js",
+    "build:docker": "./scripts/build_docker.sh",
+    "run:docker": "docker run -it --rm --network host -v $HOME/.codex:/home/node/.codex -v $(pwd):$(pwd) -w $(pwd) eybo-codex-cli:latest",
+    "run:ollama": "./scripts/run_with_ollama.sh",
+    "publish:docker": "./scripts/publish_docker.sh",
     "release:readme": "cp ../README.md ./README.md",
-    "release:version": "codex -a full-auto 'update the CLI_VERSION in codex-cli/src/utils/session.ts and the version in package.json to use the current timestamp (YYMMDDHHmm format)'",
+    "release:version": "codex-cli -a full-auto 'update the CLI_VERSION in codex-cli/src/utils/session.ts and the version in package.json to use the current timestamp (YYMMDDHHmm format)'",
     "release": "npm run release:readme && npm run release:version && npm run build && npm publish --access public",
-    "prepare": "husky",
     "pre-commit": "lint-staged"
   },
   "files": [
     "README.md",
+    "CHANGELOG.md",
     "dist",
-    "src"
+    "src",
+    "Dockerfile",
+    "scripts",
+    "recap-*.md"
   ],
   "dependencies": {
     "@inkjs/ui": "^2.0.0",
@@ -40,11 +47,10 @@
     "fast-deep-equal": "^3.1.3",
     "file-type": "^20.1.0",
     "ink": "^5.2.0",
-    "marked": "^15.0.7",
+    "marked": "^14.0.0",
     "marked-terminal": "^7.3.0",
     "meow": "^13.2.0",
     "open": "^10.1.0",
-    "openai": "^4.89.0",
     "react": "^18.2.0",
     "shell-quote": "^1.8.2",
     "to-rotated": "^1.0.0",
@@ -87,5 +93,16 @@
     "type": "git",
     "url": "git+https://github.com/elie00/codex-cli.git"
   },
-  "description": "Lightweight coding agent that runs in your terminal"
+  "description": "Lightweight coding agent that runs in your terminal",
+  "main": "ignore-react-devtools-plugin.js",
+  "directories": {
+    "example": "examples",
+    "test": "tests"
+  },
+  "keywords": ["cli", "ai", "coding-assistant", "terminal", "ollama", "chatbot", "code-generation", "development-tool"],
+  "author": "Elie",
+  "bugs": {
+    "url": "https://github.com/elie00/codex-cli/issues"
+  },
+  "homepage": "https://github.com/elie00/codex-cli#readme"
 }

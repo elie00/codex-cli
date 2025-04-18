@@ -1,4 +1,5 @@
 import type { AgentLoop } from "../../utils/agent/agent-loop.js";
+import type { LLMProviderType } from "../../utils/config.js";
 
 import { Box, Text } from "ink";
 import path from "node:path";
@@ -13,6 +14,7 @@ export interface TerminalHeaderProps {
   colorsByPolicy: Record<string, string | undefined>;
   agent?: AgentLoop;
   initialImagePaths?: Array<string>;
+  providerType?: LLMProviderType;
 }
 
 const TerminalHeader: React.FC<TerminalHeaderProps> = ({
@@ -24,46 +26,74 @@ const TerminalHeader: React.FC<TerminalHeaderProps> = ({
   colorsByPolicy,
   agent,
   initialImagePaths,
+  providerType = 'openai',
 }) => {
+  // Function to get the friendly name of the provider
+  const getProviderName = (type: LLMProviderType): string => {
+    switch(type) {
+      case 'openai': return 'OpenAI';
+      case 'ollama': return 'Ollama';
+      case 'huggingface': return 'HuggingFace';
+      default: return type.charAt(0).toUpperCase() + type.slice(1);
+    }
+  };
+  
+  // Function to get the provider color
+  const getProviderColor = (type: LLMProviderType): string => {
+    switch(type) {
+      case 'openai': return 'greenBright';
+      case 'ollama': return 'greenBright'; // Matrix green color for Ollama
+      case 'huggingface': return 'blueBright';
+      default: return 'whiteBright';
+    }
+  };
+  
+  const providerName = getProviderName(providerType);
+  const providerColor = getProviderColor(providerType);
+
   return (
     <>
       {terminalRows < 10 ? (
         // Compact header for small terminal windows
         <Text>
-          ● Codex v{version} – {PWD} – {model} –{" "}
+          ● <Text color={providerColor}>{providerName}</Text> <Text bold>Codex-CLI</Text> – {PWD} – <Text color={providerColor}>{model}</Text> –{" "}
           <Text color={colorsByPolicy[approvalPolicy]}>{approvalPolicy}</Text>
         </Text>
       ) : (
         <>
           <Box borderStyle="round" paddingX={1} width={64}>
             <Text>
-              ● OpenAI <Text bold>Codex</Text>{" "}
+              ● <Text color={providerColor} bold>{providerName}</Text>{" "}
+              <Text bold>Codex-CLI</Text>{" "}
               <Text dimColor>
-                (research preview) <Text color="blueBright">v{version}</Text>
+                (code assistant) <Text color="greenBright">v{version}</Text>
               </Text>
             </Text>
           </Box>
           <Box
             borderStyle="round"
-            borderColor="gray"
+            borderColor={providerColor}
             paddingX={1}
             width={64}
             flexDirection="column"
           >
             <Text>
               localhost <Text dimColor>session:</Text>{" "}
-              <Text color="magentaBright" dimColor>
+              <Text color={providerColor} dimColor>
                 {agent?.sessionId ?? "<no-session>"}
               </Text>
             </Text>
             <Text dimColor>
-              <Text color="blueBright">↳</Text> workdir: <Text bold>{PWD}</Text>
+              <Text color="greenBright">↳</Text> workdir: <Text bold>{PWD}</Text>
             </Text>
             <Text dimColor>
-              <Text color="blueBright">↳</Text> model: <Text bold>{model}</Text>
+              <Text color={providerColor}>↳</Text> provider: <Text bold color={providerColor}>{providerName}</Text>
             </Text>
             <Text dimColor>
-              <Text color="blueBright">↳</Text> approval:{" "}
+              <Text color={providerColor}>↳</Text> model: <Text bold color={providerColor}>{model}</Text>
+            </Text>
+            <Text dimColor>
+              <Text color={providerColor}>↳</Text> approval:{" "}
               <Text bold color={colorsByPolicy[approvalPolicy]} dimColor>
                 {approvalPolicy}
               </Text>

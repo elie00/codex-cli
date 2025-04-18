@@ -69,7 +69,7 @@ const cli = meow(
     --project-doc <file>       Include an additional markdown file at <file> as context
     --full-stdout              Do not truncate stdout/stderr from command outputs
 
-    --provider <provider>      LLM provider to use ('openai', 'ollama', or 'huggingface') (default: openai)
+    --provider <provider>      LLM provider to use ('ollama' or 'huggingface') (default: ollama)
     --provider-url <url>       URL of the provider API (for Ollama and HuggingFace)
 
   Dangerous options
@@ -154,8 +154,8 @@ const cli = meow(
       // Options pour les fournisseurs LLM
       provider: {
         type: "string",
-        default: "openai",
-        description: "LLM provider to use ('openai', 'ollama', or 'huggingface')"
+        default: "ollama",
+        description: "LLM provider to use ('ollama' or 'huggingface')"
       },
       providerUrl: {
         type: "string",
@@ -217,22 +217,32 @@ if (cli.flags.config) {
 }
 
 // ---------------------------------------------------------------------------
-// API key handling
+// Initialisation des fournisseurs LLM
 // ---------------------------------------------------------------------------
 
-const apiKey = process.env["OPENAI_API_KEY"];
+// Déterminons d'abord le fournisseur LLM sélectionné
+let providerType = cli.flags.provider as LLMProviderType || 'ollama';
 
-if (!apiKey) {
+// Si le fournisseur est OpenAI, le remplacer par Ollama et informer l'utilisateur
+if (providerType === 'openai') {
   // eslint-disable-next-line no-console
-  console.error(
-    `\n${chalk.red("Missing OpenAI API key.")}\n\n` +
-      `Set the environment variable ${chalk.bold("OPENAI_API_KEY")} ` +
-      `and re-run this command.\n` +
-      `You can create a key here: ${chalk.bold(
-        chalk.underline("https://platform.openai.com/account/api-keys"),
-      )}\n`,
+  console.warn(
+    `\n${chalk.yellow("Le fournisseur OpenAI est désactivé dans cette version.")}\n\n` +
+    `Utilisation du fournisseur Ollama par défaut.\n`
   );
-  process.exit(1);
+  providerType = 'ollama';
+}
+
+// Avertissement pour Hugging Face sans clé API (mais pas bloquant)
+if (providerType === 'huggingface' && !process.env["HUGGINGFACE_API_KEY"]) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    `\n${chalk.yellow("Note: Aucune clé API Hugging Face trouvée.")}\n\n` +
+    `Pour certains modèles, vous pourriez avoir besoin de définir la variable d'environnement ${chalk.bold("HUGGINGFACE_API_KEY")}.\n` +
+    `Vous pouvez créer une clé ici: ${chalk.bold(
+      chalk.underline("https://huggingface.co/settings/tokens"),
+    )}\n`
+  );
 }
 
 const fullContextMode = Boolean(cli.flags.fullContext);
@@ -247,21 +257,24 @@ const prompt = cli.input[0];
 const model = cli.flags.model;
 const imagePaths = cli.flags.image as Array<string> | undefined;
 
+// Récupérer les clés API pour chaque fournisseur
+const apiKey = process.env["OPENAI_API_KEY"] || "";
+const huggingfaceApiKey = process.env["HUGGINGFACE_API_KEY"] || "";
+
 config = {
-  apiKey,
+  apiKey, // Toujours inclure la clé OpenAI si elle existe (pour la compatibilité)
   ...config,
   model: model ?? config.model,
-  providerType: cli.flags.provider as LLMProviderType || config.providerType || 'openai',
+  providerType: providerType || config.providerType || 'ollama',
   providerUrl: cli.flags.providerUrl || config.providerUrl,
 };
 
 if (!(await isModelSupportedForResponses(config.model, config.providerType, config.providerUrl))) {
   // eslint-disable-next-line no-console
   console.error(
-    `The model "${config.model}" does not appear in the list of models ` +
-      `available to your account. Double‑check the spelling (use\n` +
-      `  openai models list\n` +
-      `to see the full list) or choose another model with the --model flag.`,
+    `Le modèle "${config.model}" n'apparaît pas dans la liste des modèles ` +
+      `disponibles pour le fournisseur ${config.providerType}.\n` +
+      `Veuillez vérifier le nom du modèle et réessayer.`
   );
   process.exit(1);
 }
@@ -306,7 +319,7 @@ if (quietMode) {
   if (!prompt || prompt.trim() === "") {
     // eslint-disable-next-line no-console
     console.error(
-      'Quiet mode requires a prompt string, e.g.,: codex -q "Fix bug #123 in the foobar project"',
+      'Le mode silencieux nécessite une chaîne de requête, par exemple : codex -q "Réparer le bug #123 dans le projet foobar"',
     );
     process.exit(1);
   }
@@ -438,6 +451,9 @@ async function runQuietMode({
     onLastResponseId: () => {
       /* intentionally ignored in quiet mode */
     },
+    // Ajout des paramètres pour le fournisseur LLM
+    providerType: config.providerType,
+    providerUrl: config.providerUrl,
   });
 
   const inputItem = await createInputItem(prompt, imagePaths);

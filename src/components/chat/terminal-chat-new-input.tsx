@@ -18,12 +18,12 @@ import React, { useCallback, useState, Fragment } from "react";
 import { useInterval } from "use-interval";
 
 const suggestions = [
-  "explain this codebase to me",
-  "fix any build errors",
-  "are there any bugs in my code?",
+  "écris une fonction qui calcule le nombre de fibonacci",
+  "explique-moi comment fonctionne Ollama",
+  "trouve les bugs dans mon code",
 ];
 
-const typeHelpText = `ctrl+c to exit | "/clear" to reset context | "/help" for commands | ↑↓ to recall history | ctrl+x to open external editor | enter to send`;
+const typeHelpText = `ctrl+c pour quitter | "/clear" pour réinitialiser | "/help" pour les commandes | ↑↓ pour l'historique | ctrl+x pour l'éditeur externe | entrée pour envoyer`;
 
 // Enable verbose logging for the history‑navigation logic when the
 // DEBUG_TCI environment variable is truthy.  The traces help while debugging
@@ -31,39 +31,18 @@ const typeHelpText = `ctrl+c to exit | "/clear" to reset context | "/help" for c
 const DEBUG_HIST =
   process.env["DEBUG_TCI"] === "1" || process.env["DEBUG_TCI"] === "true";
 
-const thinkingTexts = ["Thinking"]; /* [
-  "Consulting the rubber duck",
-  "Maximizing paperclips",
-  "Reticulating splines",
-  "Immanentizing the Eschaton",
-  "Thinking",
-  "Thinking about thinking",
-  "Spinning in circles",
-  "Counting dust specks",
-  "Updating priors",
-  "Feeding the utility monster",
-  "Taking off",
-  "Wireheading",
-  "Counting to infinity",
-  "Staring into the Basilisk",
-  "Running acausal tariff negotiations",
-  "Searching the library of babel",
-  "Multiplying matrices",
-  "Solving the halting problem",
-  "Counting grains of sand",
-  "Simulating a simulation",
-  "Asking the oracle",
-  "Detangling qubits",
-  "Reading tea leaves",
-  "Pondering universal love and transcendent joy",
-  "Feeling the AGI",
-  "Shaving the yak",
-  "Escaping local minima",
-  "Pruning the search tree",
-  "Descending the gradient",
-  "Painting the bikeshed",
-  "Securing funding",
-]; */
+const thinkingTexts = [
+  "Réflexion en cours",
+  "Exploration des possibilités",
+  "Activation des synapses",
+  "Calcul en cours",
+  "Analyse",
+  "Recherche de solution",
+  "Traitement de la requête",
+  "Génération de code",
+  "IA locale au travail",
+  "Ollama réfléchit"
+];
 
 export default function TerminalChatInput({
   isNew: _isNew,
@@ -489,16 +468,19 @@ function TerminalChatInputThinking({
   return (
     <Box flexDirection="column" gap={1}>
       <Box gap={2}>
-        <Spinner type="ball" />
-        <Text>
+        <Spinner type="dots" />
+        <Text color="magentaBright">
           {thinkingText}
           {dots}
         </Text>
       </Box>
-      {awaitingConfirm && (
+      {awaitingConfirm ? (
         <Text dimColor>
-          Press <Text bold>Esc</Text> again to interrupt and enter a new
-          instruction
+          Appuyez sur <Text bold>Echap</Text> à nouveau pour interrompre et entrer une nouvelle instruction
+        </Text>
+      ) : (
+        <Text dimColor>
+          Appuyez sur <Text bold>Echap</Text> deux fois pour interrompre
         </Text>
       )}
     </Box>

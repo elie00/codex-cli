@@ -1,0 +1,19 @@
+--- src/utils/agent/agent-loop.ts.orig
++++ src/utils/agent/agent-loop.ts
+@@ -312,14 +312,10 @@
+       
+       // Configuration spécifique selon le type de fournisseur
+       switch (this.providerType) {
+         case 'openai':
+-          // Ajouter la clé API pour OpenAI si disponible
+-          const apiKey = this.config.apiKey ?? process.env["OPENAI_API_KEY"];
+-          if (apiKey) {
+-            options.apiKey = apiKey;
+-          }
+-          options.baseURL = options.baseURL || OPENAI_BASE_URL;
++          // Bloquer l'utilisation d'OpenAI
++          throw new Error("Le fournisseur OpenAI est désactivé dans cette version. Veuillez utiliser 'ollama' ou 'huggingface' à la place.");
+           break;
+         case 'huggingface':
+           // Pour Hugging Face, ajouter la clé API si disponible
+           const hfApiKey = process.env["HUGGINGFACE_API_KEY"];

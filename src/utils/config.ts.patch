@@ -1,0 +1,27 @@
+--- src/utils/config.ts.orig
++++ src/utils/config.ts
+@@ -37,20 +37,14 @@
+   parseInt(process.env["PROVIDER_TIMEOUT_MS"] || process.env["OPENAI_TIMEOUT_MS"] || "0", 10) || undefined;
+ 
+ // Configurations spécifiques par fournisseur
+ export const PROVIDER_CONFIGS = {
+-  openai: {
+-    baseURL: process.env["OPENAI_BASE_URL"] || "",
+-    apiKey: process.env["OPENAI_API_KEY"] || "",
+-  },
+   ollama: {
+     baseURL: process.env["OLLAMA_BASE_URL"] || "http://localhost:11434/api",
+   },
+   huggingface: {
+     baseURL: process.env["HUGGINGFACE_BASE_URL"] || "http://localhost:8080",
+     apiKey: process.env["HUGGINGFACE_API_KEY"] || "",
+   }
+ };
+ 
+-// Pour maintenir la compatibilité avec le code existant
+-export const OPENAI_TIMEOUT_MS = PROVIDER_TIMEOUT_MS;
+-export const OPENAI_BASE_URL = PROVIDER_CONFIGS.openai.baseURL;
+-export let OPENAI_API_KEY = PROVIDER_CONFIGS.openai.apiKey;
++export const OPENAI_TIMEOUT_MS = undefined;
++export const OPENAI_BASE_URL = '';
++export let OPENAI_API_KEY = '';

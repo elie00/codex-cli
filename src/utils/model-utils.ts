@@ -1,13 +1,12 @@
-import { OPENAI_API_KEY } from "./config";
+import { PROVIDER_CONFIGS } from "./config";
 import type { AppConfig } from "./config";
 import type { LLMProviderType } from "./config";
-import OpenAI from "openai";
 import axios from "axios";
 import { isLoggingEnabled, log } from "./agent/log.js";
 
-const MODEL_LIST_TIMEOUT_MS = 2_000; // 2 seconds
+const MODEL_LIST_TIMEOUT_MS = 2_000; // 2 secondes
 export const RECOMMENDED_MODELS: Array<string> = ["o4-mini", "o3"];
-export const RECOMMENDED_OLLAMA_MODELS: Array<string> = ["llama3", "llama2", "mistral"];
+export const RECOMMENDED_OLLAMA_MODELS: Array<string> = ["llama3", "deepseek-coder-v2:16b", "gemma3:12b", "gemma3:4b", "cogito:8b", "phi3"];
 export const RECOMMENDED_HF_MODELS: Array<string> = ["mistral-7b-instruct", "gemma-7b-it"];
 
 /**
@@ -28,13 +27,14 @@ let modelsPromiseMap: Record<string, Promise<Array<string>> | null> = {
 /**
  * Récupérer les modèles depuis le fournisseur spécifié
  */
-async function fetchModels(provider: LLMProviderType = 'openai', providerUrl?: string): Promise<Array<string>> {
+async function fetchModels(provider: LLMProviderType = 'ollama', providerUrl?: string): Promise<Array<string>> {
   if (isLoggingEnabled()) {
-    log(`Fetching models for provider: ${provider}, URL: ${providerUrl || 'default'}`);
+    log(`Récupération des modèles pour le fournisseur: ${provider}, URL: ${providerUrl || 'défaut'}`);
   }
   
   if (provider === 'openai') {
-    return fetchOpenAIModels();
+    // OpenAI est désactivé, retourner simplement les modèles recommandés
+    return RECOMMENDED_MODELS;
   } else if (provider === 'ollama') {
     return fetchOllamaModels(providerUrl);
   } else if (provider === 'huggingface') {
@@ -45,43 +45,18 @@ async function fetchModels(provider: LLMProviderType = 'openai', providerUrl?: s
 }
 
 /**
- * Récupérer les modèles depuis OpenAI
+ * Récupérer les modèles depuis OpenAI (désactivé)
  */
-async function fetchOpenAIModels(): Promise<Array<string>> {
-  // Si l'utilisateur n'a pas configuré de clé API, on ne peut pas contacter le réseau
-  if (!OPENAI_API_KEY) {
-    return RECOMMENDED_MODELS;
-  }
-
-  try {
-    const openai = new OpenAI({ apiKey: OPENAI_API_KEY });
-    const list = await openai.models.list();
-
-    const models: Array<string> = [];
-    for await (const model of list as AsyncIterable<{ id?: string }>) {
-      if (model && typeof model.id === "string") {
-        models.push(model.id);
-      }
-    }
-
-    return models.sort();
-  } catch (error) {
-    if (isLoggingEnabled()) {
-      log(`Error fetching OpenAI models: ${error}`);
-    }
-    return RECOMMENDED_MODELS;
-  }
-}
 
 /**
  * Récupérer les modèles depuis Ollama
  */
 async function fetchOllamaModels(baseURL?: string): Promise<Array<string>> {
   try {
-    const url = `${baseURL || 'http://localhost:11434/api'}/tags`;
+    const url = `${baseURL || PROVIDER_CONFIGS.ollama.baseURL || 'http://localhost:11434/api'}/tags`;
     
     if (isLoggingEnabled()) {
-      log(`Fetching Ollama models from: ${url}`);
+      log(`Récupération des modèles Ollama depuis: ${url}`);
     }
     
     const response = await axios.get(url, { timeout: MODEL_LIST_TIMEOUT_MS });
@@ -94,7 +69,7 @@ async function fetchOllamaModels(baseURL?: string): Promise<Array<string>> {
     return RECOMMENDED_OLLAMA_MODELS;
   } catch (error) {
     if (isLoggingEnabled()) {
-      log(`Error fetching Ollama models: ${error}`);
+      log(`Erreur lors de la récupération des modèles Ollama: ${error}`);
     }
     return RECOMMENDED_OLLAMA_MODELS;
   }
@@ -105,10 +80,11 @@ async function fetchOllamaModels(baseURL?: string): Promise<Array<string>> {
  */
 async function fetchHuggingFaceModels(baseURL?: string): Promise<Array<string>> {
   try {
-    const url = `${baseURL || 'http://localhost:8080'}/models`;
+    const apiURL = baseURL || PROVIDER_CONFIGS.huggingface.baseURL || 'http://localhost:8080';
+    const url = `${apiURL}/models`;
     
     if (isLoggingEnabled()) {
-      log(`Fetching Hugging Face models from: ${url}`);
+      log(`Récupération des modèles Hugging Face depuis: ${url}`);
     }
     
     const response = await axios.get(url, { timeout: MODEL_LIST_TIMEOUT_MS });
@@ -120,14 +96,15 @@ async function fetchHuggingFaceModels(baseURL?: string): Promise<Array<string>> 
     return RECOMMENDED_HF_MODELS;
   } catch (error) {
     if (isLoggingEnabled()) {
-      log(`Error fetching Hugging Face models: ${error}`);
+      log(`Erreur lors de la récupération des modèles Hugging Face: ${error}`);
     }
     return RECOMMENDED_HF_MODELS;
   }
 }
 
 export function preloadModels(config?: AppConfig): void {
-  const provider = config?.providerType || 'openai';
+  // Si aucun fournisseur n'est spécifié, utiliser Ollama par défaut
+  const provider = config?.providerType || 'ollama';
   
   if (!modelsPromiseMap[provider]) {
     // Fire‑and‑forget - les appelants qui ont réellement besoin de la liste 
@@ -136,7 +113,7 @@ export function preloadModels(config?: AppConfig): void {
   }
 }
 
-export async function getAvailableModels(provider: LLMProviderType = 'openai', providerUrl?: string): Promise<Array<string>> {
+export async function getAvailableModels(provider: LLMProviderType = 'ollama', providerUrl?: string): Promise<Array<string>> {
   if (!modelsPromiseMap[provider]) {
     modelsPromiseMap[provider] = fetchModels(provider, providerUrl);
   }
@@ -148,19 +125,25 @@ export async function getAvailableModels(provider: LLMProviderType = 'openai', p
  */
 export async function isModelSupportedForResponses(
   model: string | undefined | null,
-  provider: LLMProviderType = 'openai',
+  provider: LLMProviderType = 'ollama',
   providerUrl?: string
 ): Promise<boolean> {
   if (typeof model !== "string" || model.trim() === "") {
     return true;
   }
   
+  // Si le fournisseur est OpenAI, rediriger vers Ollama
+  if (provider === 'openai') {
+    console.warn('Le fournisseur OpenAI est désactivé. Vérification de la compatibilité du modèle avec Ollama à la place.');
+    provider = 'ollama';
+  }
+  
   // Liste de modèles recommandés selon le fournisseur
-  const recommendedModels = provider === 'openai' 
-    ? RECOMMENDED_MODELS 
-    : provider === 'ollama' 
-      ? RECOMMENDED_OLLAMA_MODELS 
-      : RECOMMENDED_HF_MODELS;
+  const recommendedModels = provider === 'ollama'
+    ? RECOMMENDED_OLLAMA_MODELS
+      : provider === 'huggingface'
+      ? RECOMMENDED_HF_MODELS 
+      : RECOMMENDED_MODELS; // Fallback par défaut
   
   if (recommendedModels.includes(model)) {
     return true;
@@ -183,7 +166,7 @@ export async function isModelSupportedForResponses(
     return models.includes(model.trim());
   } catch (error) {
     if (isLoggingEnabled()) {
-      log(`Error checking model support: ${error}`);
+      log(`Erreur lors de la vérification de la compatibilité du modèle: ${error}`);
     }
     // Erreur réseau ou de bibliothèque → ne pas bloquer le démarrage
     return true;

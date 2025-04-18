@@ -26,6 +26,11 @@ import ApprovalModeOverlay from "../approval-mode-overlay.js";
 import HelpOverlay from "../help-overlay.js";
 import HistoryOverlay from "../history-overlay.js";
 import ModelOverlay from "../model-overlay.js";
+import OllamaConfigOverlay from "../ollama-config-overlay.js";
+import OllamaModelManagerOverlay from "../ollama-model-manager-overlay.js";
+import { updateModelParams } from "../../utils/ollama-config.js";
+import { t } from "../../locales/en";
+import { setActiveInterface } from "../../utils/screen-manager";
 import { Box, Text } from "ink";
 import React, { useEffect, useMemo, useState } from "react";
 import { inspect } from "util";
@@ -40,8 +45,18 @@ type Props = {
 
 const colorsByPolicy: Record<ApprovalPolicy, ColorName | undefined> = {
   "suggest": undefined,
-  "auto-edit": "greenBright",
+  "auto-edit": "green",
   "full-auto": "green",
+};
+
+// Function to get the friendly name of the provider
+const getProviderName = (type: string = 'openai'): string => {
+  switch(type) {
+    case 'openai': return 'OpenAI';
+    case 'ollama': return 'Ollama';
+    case 'huggingface': return 'HuggingFace';
+    default: return type.charAt(0).toUpperCase() + type.slice(1);
+  }
 };
 
 export default function TerminalChat({
@@ -63,7 +78,7 @@ export default function TerminalChat({
   const { requestConfirmation, confirmationPrompt, submitConfirmation } =
     useConfirmation();
   const [overlayMode, setOverlayMode] = useState<
-    "none" | "history" | "model" | "approval" | "help"
+    "none" | "history" | "model" | "approval" | "help" | "ollama-config" | "ollama-models"
   >("none");
 
   const [initialPrompt, setInitialPrompt] = useState(_initialPrompt);
@@ -94,7 +109,7 @@ export default function TerminalChat({
       log(
         `model=${model} instructions=${Boolean(
           config.instructions,
-        )} approvalPolicy=${approvalPolicy}`,
+        )} approvalPolicy=${approvalPolicy} providerType=${config.providerType}`,
       );
     }
 
@@ -130,6 +145,9 @@ export default function TerminalChat({
           );
         return { review, customDenyMessage, applyPatch };
       },
+      // Ajout des paramètres pour le fournisseur LLM
+      providerType: config.providerType,
+      providerUrl: config.providerUrl,
     });
 
     // force a render so JSX below can "see" the freshly created agent
@@ -212,7 +230,10 @@ export default function TerminalChat({
   // ────────────────────────────────────────────────────────────────
   useEffect(() => {
     (async () => {
-      const available = await getAvailableModels();
+      const providerType = config.providerType || 'openai';
+      const providerName = getProviderName(providerType);
+      const available = await getAvailableModels(providerType, config.providerUrl);
+      
       if (model && available.length > 0 && !available.includes(model)) {
         setItems((prev) => [
           ...prev,
@@ -223,7 +244,7 @@ export default function TerminalChat({
             content: [
               {
                 type: "input_text",
-                text: `Warning: model "${model}" is not in the list of available models returned by OpenAI.`,
+                text: `Warning: model "${model}" is not in the list of available models returned by ${providerName}.`,
               },
             ],
           },
@@ -268,6 +289,7 @@ export default function TerminalChat({
               colorsByPolicy,
               agent,
               initialImagePaths,
+              providerType: config.providerType, // Add provider type for display
             }}
           />
         ) : (
@@ -292,10 +314,30 @@ export default function TerminalChat({
               })
             }
             contextLeftPercent={contextLeftPercent}
-            openOverlay={() => setOverlayMode("history")}
-            openModelOverlay={() => setOverlayMode("model")}
-            openApprovalOverlay={() => setOverlayMode("approval")}
-            openHelpOverlay={() => setOverlayMode("help")}
+            openOverlay={() => {
+              setActiveInterface("history-overlay");
+              setOverlayMode("history");
+            }}
+            openModelOverlay={() => {
+              setActiveInterface("model-overlay");
+              setOverlayMode("model");
+            }}
+            openApprovalOverlay={() => {
+              setActiveInterface("approval-overlay");
+              setOverlayMode("approval");
+            }}
+            openHelpOverlay={() => {
+              setActiveInterface("help-overlay");
+              setOverlayMode("help");
+            }}
+            openOllamaConfig={config.providerType === 'ollama' ? () => {
+              setActiveInterface("ollama-config-overlay");
+              setOverlayMode("ollama-config");
+            } : undefined}
+            openOllamaModels={config.providerType === 'ollama' ? () => {
+              setActiveInterface("ollama-models-overlay");
+              setOverlayMode("ollama-models");
+            } : undefined}
             active={overlayMode === "none"}
             interruptAgent={() => {
               if (!agent) {
@@ -332,7 +374,10 @@ export default function TerminalChat({
           />
         )}
         {overlayMode === "history" && (
-          <HistoryOverlay items={items} onExit={() => setOverlayMode("none")} />
+          <HistoryOverlay items={items} onExit={() => {
+            setActiveInterface("terminal-chat");
+            setOverlayMode("none");
+          }} />
         )}
         {overlayMode === "model" && (
           <ModelOverlay
@@ -369,10 +414,14 @@ export default function TerminalChat({
                   ],
                 },
               ]);
-
+              
+              setActiveInterface("terminal-chat");
               setOverlayMode("none");
             }}
-            onExit={() => setOverlayMode("none")}
+            onExit={() => {
+              setActiveInterface("terminal-chat");
+              setOverlayMode("none");
+            }}
           />
         )}
 
@@ -401,14 +450,94 @@ export default function TerminalChat({
                 },
               ]);
 
+              setActiveInterface("terminal-chat");
               setOverlayMode("none");
             }}
-            onExit={() => setOverlayMode("none")}
+            onExit={() => {
+              setActiveInterface("terminal-chat");
+              setOverlayMode("none");
+            }}
           />
         )}
 
         {overlayMode === "help" && (
-          <HelpOverlay onExit={() => setOverlayMode("none")} />
+          <HelpOverlay onExit={() => {
+            setActiveInterface("terminal-chat");
+            setOverlayMode("none");
+          }} />
+        )}
+        
+        {overlayMode === "ollama-config" && config.providerType === 'ollama' && (
+          <OllamaConfigOverlay
+            currentModel={model}
+            onExit={() => {
+              setActiveInterface("terminal-chat");
+              setOverlayMode("none");
+            }}
+            onSave={(modelName, params) => {
+              // Update model parameters
+              updateModelParams(modelName, params);
+              
+              // Add system message to inform the user
+              setItems((prev) => [
+                ...prev,
+                {
+                  id: `config-update-${Date.now()}`,
+                  type: "message",
+                  role: "system",
+                  content: [
+                    {
+                      type: "input_text",
+                      text: `Model configuration updated for ${modelName}.`,
+                    },
+                  ],
+                },
+              ]);
+              setActiveInterface("terminal-chat");
+              setOverlayMode("none");
+            }}
+          />
+        )}
+        
+        {overlayMode === "ollama-models" && config.providerType === 'ollama' && (
+          <OllamaModelManagerOverlay
+            onExit={() => {
+              setActiveInterface("terminal-chat");
+              setOverlayMode("none");
+            }}
+            onSelect={(modelName) => {
+              // If the model has changed, update it
+              if (modelName !== model) {
+                // Cancel any ongoing request
+                agent?.cancel();
+                setLoading(false);
+
+                // Update the model
+                setModel(modelName);
+                setLastResponseId((prev) =>
+                  prev && modelName !== model ? null : prev
+                );
+
+                // Add system message to inform the user
+                setItems((prev) => [
+                  ...prev,
+                  {
+                    id: `switch-model-${Date.now()}`,
+                    type: "message",
+                    role: "system",
+                    content: [
+                      {
+                        type: "input_text",
+                        text: `Model changed to ${modelName}`,
+                      },
+                    ],
+                  },
+                ]);
+              }
+              setActiveInterface("terminal-chat");
+              setOverlayMode("none");
+            }}
+          />
         )}
       </Box>
     </Box>

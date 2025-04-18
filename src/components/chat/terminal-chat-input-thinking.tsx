@@ -4,65 +4,23 @@ import { Box, Text, useInput, useStdin } from "ink";
 import React, { useState } from "react";
 import { useInterval } from "use-interval";
 
-const thinkingTexts = ["Thinking"]; /* [
-  "Consulting the rubber duck",
-  "Maximizing paperclips",
-  "Reticulating splines",
-  "Immanentizing the Eschaton",
-  "Thinking",
-  "Thinking about thinking",
-  "Spinning in circles",
-  "Counting dust specks",
-  "Updating priors",
-  "Feeding the utility monster",
-  "Taking off",
-  "Wireheading",
-  "Counting to infinity",
-  "Staring into the Basilisk",
-  "Negotiationing acausal trades",
-  "Searching the library of babel",
-  "Multiplying matrices",
-  "Solving the halting problem",
-  "Counting grains of sand",
-  "Simulating a simulation",
-  "Asking the oracle",
-  "Detangling qubits",
-  "Reading tea leaves",
-  "Pondering universal love and transcendent joy",
-  "Feeling the AGI",
-  "Shaving the yak",
-  "Escaping local minima",
-  "Pruning the search tree",
-  "Descending the gradient",
-  "Bikeshedding",
-  "Securing funding",
-  "Rewriting in Rust",
-  "Engaging infinite improbability drive",
-  "Clapping with one hand",
-  "Synthesizing",
-  "Rebasing thesis onto antithesis",
-  "Transcending the loop",
-  "Frogeposting",
-  "Summoning",
-  "Peeking beyond the veil",
-  "Seeking",
-  "Entering deep thought",
-  "Meditating",
-  "Decomposing",
-  "Creating",
-  "Beseeching the machine spirit",
-  "Calibrating moral compass",
-  "Collapsing the wave function",
-  "Doodling",
-  "Translating whale song",
-  "Whispering to silicon",
-  "Looking for semicolons",
-  "Asking ChatGPT",
-  "Bargaining with entropy",
-  "Channeling",
-  "Cooking",
-  "Parroting stochastically",
-]; */
+const thinkingTexts = [
+  "Réflexion",
+  "Analyse",
+  "Traitement",
+  "Calcul",
+  "Génération",
+  "Recherche",
+  "Préparation",
+  "Élaboration",
+  "Conception",
+  "Formulation",
+  "Résolution",
+  "Exploration",
+  "Structuration",
+  "Synthèse",
+  "Organisation"
+];
 
 export default function TerminalChatInputThinking({
   onInterrupt,
@@ -156,16 +114,15 @@ export default function TerminalChatInputThinking({
   return (
     <Box flexDirection="column" gap={1}>
       <Box gap={2}>
-        <Spinner type="ball" />
-        <Text>
+        <Spinner type="dots" />
+        <Text color="magenta">
           {thinkingText}
           {dots}
         </Text>
       </Box>
       {awaitingConfirm && (
         <Text dimColor>
-          Press <Text bold>Esc</Text> again to interrupt and enter a new
-          instruction
+          Appuyez à nouveau sur <Text bold>Échap</Text> pour interrompre et saisir une nouvelle instruction
         </Text>
       )}
     </Box>

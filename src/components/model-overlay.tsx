@@ -35,7 +35,7 @@ export default function ModelOverlay({
     (async () => {
       const models = await getAvailableModels();
 
-      // Split the list into recommended and “other” models.
+      // Split the list into recommended and "other" models.
       const recommended = RECOMMENDED_MODELS.filter((m) => models.includes(m));
       const others = models.filter((m) => !recommended.includes(m));
 
@@ -70,7 +70,7 @@ export default function ModelOverlay({
       <Box
         flexDirection="column"
         borderStyle="round"
-        borderColor="gray"
+        borderColor="greenBright"
         width={80}
       >
         <Box paddingX={1}>
@@ -85,7 +85,7 @@ export default function ModelOverlay({
           </Text>
         </Box>
         <Box paddingX={1}>
-          <Text dimColor>press esc or enter to close</Text>
+          <Text color="green">press esc or enter to close</Text>
         </Box>
       </Box>
     );

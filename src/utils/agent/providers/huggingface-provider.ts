@@ -16,14 +16,14 @@ export class HuggingFaceProvider implements LLMProvider {
    * Initialise le fournisseur avec les options spécifiées
    */
   async initialize(options: LLMProviderOptions): Promise<void> {
-    if (options.baseURL) {
-      this.baseURL = options.baseURL;
+    if (options['baseURL']) {
+      this.baseURL = options['baseURL'];
     }
-    if (options.timeout) {
-      this.timeout = options.timeout;
+    if (options['timeout']) {
+      this.timeout = options['timeout'];
     }
-    if (options.apiKey) {
-      this.apiKey = options.apiKey;
+    if (options['apiKey']) {
+      this.apiKey = options['apiKey'];
     }
   }
 
@@ -95,13 +95,18 @@ export class HuggingFaceProvider implements LLMProvider {
 
   /**
    * Vérifie si un modèle spécifique est supporté par Hugging Face
+   * Pour simplifier, retourne toujours true car la liste des modèles HF est trop vaste
    */
   async isModelSupported(model: string): Promise<boolean> {
     try {
-      const models = await this.listAvailableModels();
-      return models.includes(model);
+      // Pour simplifier l'utilisation, on suppose que le modèle spécifié est valide
+      // puisqu'il est directement spécifié dans l'URL de l'API
+      return true;
     } catch (error) {
-      console.error("Erreur lors de la vérification du modèle Hugging Face:", error);
+      const errorMessage = error && typeof error === 'object' && 'message' in error 
+        ? error.message 
+        : String(error);
+      console.error("Erreur lors de la vérification du modèle Hugging Face:", errorMessage);
       return false;
     }
   }
@@ -132,20 +137,20 @@ export class HuggingFaceProvider implements LLMProvider {
     
     // Construire le prompt au format d'instruction
     for (const item of input) {
-      if (item.type === 'user' && typeof item.content === 'string') {
-        prompt += `User: ${item.content}\n`;
-      } else if (item.type === 'assistant' && typeof item.content === 'string') {
-        prompt += `Assistant: ${item.content}\n`;
-      } else if (Array.isArray(item.content)) {
+      if (item['type'] === 'user' && typeof item['content'] === 'string') {
+        prompt += `User: ${item['content']}\n`;
+      } else if (item['type'] === 'assistant' && typeof item['content'] === 'string') {
+        prompt += `Assistant: ${item['content']}\n`;
+      } else if (Array.isArray(item['content'])) {
         // Gérer le contenu sous forme de tableau (texte et images)
-        const textParts = item.content
-          .filter(part => typeof part === 'object' && part.text)
-          .map(part => part.text)
+        const textParts = item['content']
+          .filter(part => typeof part === 'object' && part['text'])
+          .map(part => part['text'])
           .join('');
           
-        if (item.type === 'user') {
+        if (item['type'] === 'user') {
           prompt += `User: ${textParts}\n`;
-        } else if (item.type === 'assistant') {
+        } else if (item['type'] === 'assistant') {
           prompt += `Assistant: ${textParts}\n`;
         }
       }
@@ -177,18 +182,18 @@ export class HuggingFaceProvider implements LLMProvider {
     // Essayer de parser le JSON
     try {
       const data = JSON.parse(chunk);
-      if (data.token && data.token.text) {
+      if (data.token && data.token['text']) {
         return {
-          type: 'text',
-          text: data.token.text
+          'type': 'text',
+          'text': data.token['text']
         };
       }
     } catch (e) {
       // Si ce n'est pas du JSON valide, vérifier si c'est du texte brut
       if (chunk.trim()) {
         return {
-          type: 'text',
-          text: chunk
+          'type': 'text',
+          'text': chunk
         };
       }
     }
@@ -208,8 +213,8 @@ export class HuggingFaceProvider implements LLMProvider {
       for (const line of lines) {
         try {
           const json = JSON.parse(line);
-          if (json.token && json.token.text) {
-            fullText += json.token.text;
+          if (json.token && json.token['text']) {
+            fullText += json.token['text'];
           }
         } catch (e) {
           // Si ce n'est pas du JSON, l'ajouter directement
@@ -223,8 +228,8 @@ export class HuggingFaceProvider implements LLMProvider {
     
     // Retourner comme un seul élément de texte
     return [{
-      type: 'text',
-      text: fullText
+      'type': 'text',
+      'text': fullText
     }];
   }
 }

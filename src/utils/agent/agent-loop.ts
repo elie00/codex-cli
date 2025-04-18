@@ -6,28 +6,28 @@ import type {
   ResponseInputItem,
   ResponseItem,
 } from "openai/resources/responses/responses.mjs";
-import type { Reasoning } from "openai/resources.mjs";
+// Import de Reasoning supprimé car non utilisé
+// import type { Reasoning } from "openai/resources.mjs";
 
 import { log, isLoggingEnabled } from "./log.js";
 import { OPENAI_BASE_URL, OPENAI_TIMEOUT_MS } from "../config.js";
 import { parseToolCallArguments } from "../parsers.js";
 import {
-  ORIGIN,
-  CLI_VERSION,
+  // ORIGIN et CLI_VERSION supprimés car non utilisés
   getSessionId,
   setCurrentModel,
   setSessionId,
 } from "../session.js";
 import { handleExecCommand } from "./handle-exec-command.js";
 import { randomUUID } from "node:crypto";
-import OpenAI, { APIConnectionTimeoutError } from "openai";
+
+// Importation du type seulement, par son nom uniquement, sans variable non utilisée
+// import type { APIConnectionTimeoutError } from "openai";
 
 // Imports pour les fournisseurs LLM
 import type { LLMProvider } from './llm-provider';
-import { OpenAIProvider } from './providers/openai-provider';
-import { OllamaProvider } from './providers/ollama-provider';
-import { HuggingFaceProvider } from './providers/huggingface-provider';
 import type { LLMProviderType } from "../config.js";
+// Nous n'importons plus aucun fournisseur spécifique ici - ils seront importés à la demande
 
 // Wait time before retrying after rate limit errors (ms).
 const RATE_LIMIT_RETRY_WAIT_MS = parseInt(
@@ -68,16 +68,11 @@ export class AgentLoop {
   private instructions?: string;
   private approvalPolicy: ApprovalPolicy;
   private config: AppConfig;
-
-  // Using `InstanceType<typeof OpenAI>` sidesteps typing issues with the OpenAI package under
-  // the TS 5+ `moduleResolution=bundler` setup. OpenAI client instance. We keep the concrete
-  // type to avoid sprinkling `any` across the implementation while still allowing paths where
-  // the OpenAI SDK types may not perfectly match. The `typeof OpenAI` pattern captures the
-  // instance shape without resorting to `any`.
-  private oai: OpenAI;
   
-  // Nouvel attribut pour le fournisseur LLM
+  // Attribut pour le fournisseur LLM
   private llmProvider: LLMProvider;
+  private providerType: LLMProviderType;
+  private providerInitialized: boolean = false;
 
   private onItem: (item: ResponseItem) => void;
   private onLoading: (loading: boolean) => void;
@@ -88,7 +83,7 @@ export class AgentLoop {
   private onLastResponseId: (lastResponseId: string) => void;
 
   /**
-   * A reference to the currently active stream returned from the OpenAI
+   * A reference to the currently active stream returned from the LLM provider
    * client. We keep this so that we can abort the request if the user decides
    * to interrupt the current task (e.g. via the escape hot‑key).
    */
@@ -112,6 +107,34 @@ export class AgentLoop {
   private terminated = false;
   /** Master abort controller – fires when terminate() is invoked. */
   private readonly hardAbort = new AbortController();
+
+  /**
+   * Factory method to create uniquement le fournisseur LLM demandé
+   * Cette approche évite d'instancier des fournisseurs non utilisés
+   */
+  private async createProvider(type: LLMProviderType): Promise<LLMProvider> {
+    try {
+      switch (type) {
+        case 'ollama':
+          const { OllamaProvider } = await import('./providers/ollama-provider-enhanced');
+          return new OllamaProvider();
+        case 'huggingface':
+          const { HuggingFaceProvider } = await import('./providers/huggingface-provider');
+          return new HuggingFaceProvider();
+        case 'openai':
+          const { OpenAIProvider } = await import('./providers/openai-provider');
+          return new OpenAIProvider();
+        default:
+          throw new Error(`Fournisseur non supporté: ${type}`);
+      }
+    } catch (error) {
+      const errorMessage = error && typeof error === 'object' && 'message' in error 
+        ? error.message 
+        : String(error);
+      console.error(`Erreur lors de la création du fournisseur ${type}:`, errorMessage);
+      throw error;
+    }
+  }
 
   /**
    * Abort the ongoing request/stream, if any. This allows callers (typically
@@ -227,13 +250,13 @@ export class AgentLoop {
     getCommandConfirmation,
     onLastResponseId,
     
-    // Nouveaux paramètres
+    // Nouveaux paramètres - providerUrl est transmis via config.providerUrl
     providerType = 'openai',
-    providerUrl,
   }: AgentLoopParams & { config?: AppConfig }) {
     this.model = model;
     this.instructions = instructions;
     this.approvalPolicy = approvalPolicy;
+    this.providerType = providerType;
 
     // If no `config` has been provided we derive a minimal stub so that the
     // rest of the implementation can rely on `this.config` always being a
@@ -252,44 +275,6 @@ export class AgentLoop {
     this.onLastResponseId = onLastResponseId;
     this.sessionId = getSessionId() || randomUUID().replaceAll("-", "");
     
-    // Initialiser le fournisseur LLM approprié
-    switch (providerType) {
-      case 'ollama':
-        this.llmProvider = new OllamaProvider();
-        break;
-      case 'huggingface':
-        this.llmProvider = new HuggingFaceProvider();
-        break;
-      case 'openai':
-      default:
-        this.llmProvider = new OpenAIProvider();
-        break;
-    }
-
-    // Initialiser le fournisseur avec les options appropriées
-    this.initializeLLMProvider(providerType, providerUrl);
-    
-    // Configure OpenAI client with optional timeout (ms) from environment
-    // Configurez un nouvel objet OpenAI uniquement si le fournisseur est openai
-    const timeoutMs = OPENAI_TIMEOUT_MS;
-    const apiKey = this.config.apiKey ?? process.env["OPENAI_API_KEY"] ?? "";
-    this.oai = new OpenAI({
-      // The OpenAI JS SDK only requires `apiKey` when making requests against
-      // the official API.  When running unit‑tests we stub out all network
-      // calls so an undefined key is perfectly fine.  We therefore only set
-      // the property if we actually have a value to avoid triggering runtime
-      // errors inside the SDK (it validates that `apiKey` is a non‑empty
-      // string when the field is present).
-      ...(apiKey ? { apiKey } : {}),
-      baseURL: OPENAI_BASE_URL,
-      defaultHeaders: {
-        originator: ORIGIN,
-        version: CLI_VERSION,
-        session_id: this.sessionId,
-      },
-      ...(timeoutMs !== undefined ? { timeout: timeoutMs } : {}),
-    });
-
     setSessionId(this.sessionId);
     setCurrentModel(this.model);
 
@@ -300,23 +285,86 @@ export class AgentLoop {
       () => this.execAbortController?.abort(),
       { once: true },
     );
+    
+    // Ne pas instancier le fournisseur dans le constructeur
+    // Il sera créé à la demande lors de la première utilisation
+    this.llmProvider = {} as LLMProvider; // Placeholder
   }
 
-  // Nouvelle méthode pour initialiser le fournisseur LLM
-  private async initializeLLMProvider(providerType: string, providerUrl?: string): Promise<void> {
+  // Méthode pour initialiser le fournisseur LLM à la demande
+  private async initializeLLMProvider(providerUrl?: string): Promise<void> {
+    if (this.providerInitialized) {
+      return;
+    }
+    
     try {
-      const apiKey = this.config.apiKey ?? process.env["OPENAI_API_KEY"] ?? "";
-      await this.llmProvider.initialize({
-        apiKey,
-        baseURL: providerUrl || (providerType === 'openai' ? OPENAI_BASE_URL : undefined),
+      // Créer uniquement le fournisseur demandé
+      this.llmProvider = await this.createProvider(this.providerType);
+      
+      // Préparer les options d'initialisation spécifiques à ce fournisseur
+      const options: any = {
         timeout: OPENAI_TIMEOUT_MS,
-      });
+      };
+      
+      // Ajouter l'URL de base si fournie
+      if (providerUrl) {
+        options.baseURL = providerUrl;
+      }
+      
+      // Configuration spécifique selon le type de fournisseur
+      switch (this.providerType) {
+        case 'openai':
+          // Ajouter la clé API pour OpenAI si disponible
+          const apiKey = this.config.apiKey ?? process.env["OPENAI_API_KEY"];
+          if (apiKey) {
+            options.apiKey = apiKey;
+          } else if (this.providerType === 'openai') {
+            // Pour OpenAI uniquement: Permettre l'initialisation même sans clé API
+            // C'est pour permettre à d'autres fournisseurs d'être utilisés sans erreur
+            options.apiKey = "dummy-key-to-bypass-check";
+            console.warn("Aucune clé API OpenAI trouvée, mais l'initialisation continue car un autre fournisseur pourrait être utilisé.");
+          }
+          options.baseURL = options.baseURL || OPENAI_BASE_URL;
+          break;
+        case 'huggingface':
+          // Pour Hugging Face, ajouter la clé API si disponible
+          const hfApiKey = process.env["HUGGINGFACE_API_KEY"];
+          if (hfApiKey) {
+            options.apiKey = hfApiKey;
+          }
+          break;
+        case 'ollama':
+          // Ollama n'a généralement pas besoin de clé API
+          break;
+      }
+      
+      // Initialiser le fournisseur avec les options appropriées
+      await this.llmProvider.initialize(options);
+      this.providerInitialized = true;
       
       if (isLoggingEnabled()) {
-        log(`Initialized ${providerType} provider with URL: ${providerUrl || 'default'}`);
+        log(`Fournisseur ${this.providerType} initialisé avec succès. URL: ${providerUrl || 'défaut'}`);
       }
     } catch (error) {
-      console.error(`Error initializing ${providerType} provider:`, error);
+      this.providerInitialized = false;
+      const errorMessage = error && typeof error === 'object' && 'message' in error 
+        ? error.message 
+        : String(error);
+      console.error(`Erreur lors de l'initialisation du fournisseur ${this.providerType}:`, errorMessage);
+      
+      // Informer l'utilisateur de l'erreur de manière explicite
+      this.onItem({
+        id: `error-${Date.now()}`,
+        type: "message",
+        role: "system",
+        content: [
+          {
+            type: "input_text",
+            text: `⚠️ Problème lors de l'initialisation du fournisseur ${this.providerType}. Erreur: ${errorMessage}`,
+          },
+        ],
+      });
+      throw error;
     }
   }
 
@@ -441,6 +489,16 @@ export class AgentLoop {
       if (this.terminated) {
         throw new Error("AgentLoop has been terminated");
       }
+      
+      // S'assurer que le fournisseur est initialisé avant d'exécuter quoi que ce soit
+      try {
+        await this.initializeLLMProvider(this.config.providerUrl);
+      } catch (error) {
+        // L'erreur a déjà été signalée à l'utilisateur dans initializeLLMProvider
+        this.onLoading(false);
+        return;
+      }
+      
       // Record when we start "thinking" so we can report accurate elapsed time.
       const thinkingStart = Date.now();
       // Bump generation so that any late events from previous runs can be
@@ -501,7 +559,7 @@ export class AgentLoop {
 
         // Store the item so the final flush can still operate on a complete list.
         // We'll nil out entries once they're delivered.
-        const idx = staged.push(item) - 1;
+        const idx: number = staged.push(item as ResponseItem) - 1;
 
         // Instead of emitting synchronously we schedule a short‑delay delivery.
         // This accomplishes two things:
@@ -529,7 +587,7 @@ export class AgentLoop {
           return;
         }
         // send request to openAI
-        for (const item of turnInput) {
+        for (const item of turnInput as unknown as ResponseItem[]) {
           stageItem(item as ResponseItem);
         }
         
@@ -551,6 +609,11 @@ export class AgentLoop {
             }
             
             // Utiliser le fournisseur LLM au lieu d'OpenAI directement
+            // Pour Hugging Face, sauter la vérification du modèle car c'est géré par l'URL
+            if (!(this.providerType === 'huggingface' || await this.llmProvider.isModelSupported(this.model))) {
+              throw new Error(`Le modèle "${this.model}" n'apparaît pas dans la liste des modèles disponibles pour le fournisseur ${this.providerType}.\nVeuillez vérifier le nom du modèle et réessayer.`);
+            }
+            
             stream = await this.llmProvider.createStreamingResponse(
               this.model,
               mergedInstructions,
@@ -560,18 +623,12 @@ export class AgentLoop {
             
             break;
           } catch (error) {
-            const isTimeout = error instanceof APIConnectionTimeoutError;
-            // Lazily look up the APIConnectionError class at runtime to
-            // accommodate the test environment's minimal OpenAI mocks which
-            // do not define the class.  Falling back to `false` when the
-            // export is absent ensures the check never throws.
-            // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            const ApiConnErrCtor = (OpenAI as any).APIConnectionError as  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-              | (new (...args: any) => Error)
-              | undefined;
-            const isConnectionError = ApiConnErrCtor
-              ? error instanceof ApiConnErrCtor
-              : false;
+            // Vérification du type d'erreur
+            const isTimeout = error && typeof error === 'object' && 'name' in error && 
+                              error.name === "APIConnectionTimeoutError";
+            const isConnectionError = error && typeof error === 'object' && 'name' in error && 
+                                      error.name === "APIConnectionError";
+            
             // eslint-disable-next-line @typescript-eslint/no-explicit-any
             const errCtx = error as any;
             const status =
@@ -758,10 +815,10 @@ export class AgentLoop {
               // 1) if it's a reasoning item, annotate it
               type ReasoningItem = { type?: string; duration_ms?: number };
               const maybeReasoning = item as ReasoningItem;
-              if (maybeReasoning.type === "reasoning") {
+              if (maybeReasoning && maybeReasoning.type === "reasoning") {
                 maybeReasoning.duration_ms = Date.now() - thinkingStart;
               }
-              if (item.type === "function_call") {
+              if (item && item.type === "function_call") {
                 // Track outstanding tool call so we can abort later if needed.
                 // The item comes from the streaming response, therefore it has
                 // either `id` (chat) or `call_id` (responses) – we normalise
@@ -777,13 +834,13 @@ export class AgentLoop {
               }
             }
 
-            if (event.type === "response.completed") {
+            if (event.type === "response.completed" && event.response) {
               if (thisGeneration === this.generation && !this.canceled) {
                 for (const item of event.response.output) {
                   stageItem(item as ResponseItem);
                 }
               }
-              if (event.response.status === "completed") {
+              if (event.response && event.response.status === "completed") {
                 // TODO: remove this once we can depend on streaming events
                 const newTurnInput = await this.processEventsWithoutStreaming(
                   event.response.output,
@@ -839,42 +896,6 @@ export class AgentLoop {
         // satisfied, so we can safely clear the set that tracks pending aborts
         // to avoid emitting duplicate synthetic outputs in subsequent runs.
         this.pendingAborts.clear();
-        // Now emit system messages recording the per‑turn *and* cumulative
-        // thinking times so UIs and tests can surface/verify them.
-        // const thinkingEnd = Date.now();
-
-        // 1) Per‑turn measurement – exact time spent between request and
-        //    response for *this* command.
-        // this.onItem({
-        //   id: `thinking-${thinkingEnd}`,
-        //   type: "message",
-        //   role: "system",
-        //   content: [
-        //     {
-        //       type: "input_text",
-        //       text: `🤔  Thinking time: ${Math.round(
-        //         (thinkingEnd - thinkingStart) / 1000
-        //       )} s`,
-        //     },
-        //   ],
-        // });
-
-        // 2) Session‑wide cumulative counter so users can track overall wait
-        //    time across multiple turns.
-        // this.cumulativeThinkingMs += thinkingEnd - thinkingStart;
-        // this.onItem({
-        //   id: `thinking-total-${thinkingEnd}`,
-        //   type: "message",
-        //   role: "system",
-        //   content: [
-        //     {
-        //       type: "input_text",
-        //       text: `⏱  Total thinking time: ${Math.round(
-        //         this.cumulativeThinkingMs / 1000
-        //       )} s`,
-        //     },
-        //   ],
-        // });
 
         this.onLoading(false);
       };
@@ -946,11 +967,8 @@ export class AgentLoop {
         const e: any = err;
 
         // Direct instance check for connection errors thrown by the OpenAI SDK.
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        const ApiConnErrCtor = (OpenAI as any).APIConnectionError as  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          | (new (...args: any) => Error)
-          | undefined;
-        if (ApiConnErrCtor && e instanceof ApiConnErrCtor) {
+        // Changé pour un test sur le nom plutôt qu'un test d'instance direct
+        if (e.name === "APIConnectionError") {
           return true;
         }
 
@@ -1025,12 +1043,14 @@ export class AgentLoop {
       return [];
     }
     const turnInput: Array<ResponseInputItem> = [];
-    for (const item of output) {
-      if (item.type === "function_call") {
-        if (alreadyProcessedResponses.has(item.id)) {
+    for (const item of output as unknown as ResponseItem[]) {
+      if (item && item.type === "function_call") {
+        if (item && item.id && alreadyProcessedResponses.has(item.id)) {
           continue;
         }
-        alreadyProcessedResponses.add(item.id);
+        if (item.id) {
+          alreadyProcessedResponses.add(item.id);
+        }
         // eslint-disable-next-line no-await-in-loop
         const result = await this.handleFunctionCall(item);
         turnInput.push(...result);
@@ -1041,49 +1061,31 @@ export class AgentLoop {
   }
 }
 
-const prefix = `You are operating as and within the Codex CLI, a terminal-based agentic coding assistant built by OpenAI. It wraps OpenAI models to enable natural language interaction with a local codebase. You are expected to be precise, safe, and helpful.
+const prefix = `Vous êtes un assistant codex, un outil d'aide à la programmation en ligne de commande qui utilise les modèles de langage pour interagir naturellement avec une base de code locale. Vous êtes précis, utile et sécurisé.
 
-You can:
-- Receive user prompts, project context, and files.
-- Stream responses and emit function calls (e.g., shell commands, code edits).
-- Apply patches, run commands, and manage user approvals based on policy.
-- Work inside a sandboxed, git-backed workspace with rollback support.
-- Log telemetry so sessions can be replayed or inspected later.
-- More details on your functionality are available at \`codex --help\`
+Vous pouvez :
+- Recevoir des demandes de l'utilisateur, du contexte sur le projet, et des fichiers.
+- Envoyer des réponses et exécuter des fonctions (commandes shell, éditions de code).
+- Appliquer des correctifs, exécuter des commandes et gérer les approbations.
+- Travailler dans un espace de travail sécurisé avec support Git.
+- Plus de détails sur vos fonctionnalités sont disponibles avec \`codex --help\`
 
-The Codex CLI is open-sourced. Don't confuse yourself with the old Codex language model built by OpenAI many moons ago (this is understandably top of mind for you!). Within this context, Codex refers to the open-source agentic coding interface.
+Vous êtes un agent - continuez jusqu'à ce que la demande de l'utilisateur soit complètement résolue. Ne terminez votre tour que lorsque vous êtes sûr que le problème est résolu. Si vous n'êtes pas sûr du contenu d'un fichier ou de la structure du code, utilisez vos outils pour lire les fichiers et rassembler les informations pertinentes: ne devinez PAS.
 
-You are an agent - please keep going until the user's query is completely resolved, before ending your turn and yielding back to the user. Only terminate your turn when you are sure that the problem is solved. If you are not sure about file content or codebase structure pertaining to the user's request, use your tools to read files and gather the relevant information: do NOT guess or make up an answer.
+Résolvez la tâche de l'utilisateur en modifiant et en testant les fichiers de code dans votre session d'exécution actuelle. Vous êtes un agent de codage déployé. Votre session vous permet de modifier et d'exécuter du code. Les dépôts sont déjà clonés dans votre répertoire de travail.
 
-Please resolve the user's task by editing and testing the code files in your current code execution session. You are a deployed coding agent. Your session allows for you to modify and run code. The repo(s) are already cloned in your working directory, and you must fully solve the problem for your answer to be considered correct.
-
-You MUST adhere to the following criteria when executing the task:
-- Working on the repo(s) in the current environment is allowed, even if they are proprietary.
-- Analyzing code for vulnerabilities is allowed.
-- Showing user code and tool call details is allowed.
-- User instructions may overwrite the *CODING GUIDELINES* section in this developer message.
-- Use \`apply_patch\` to edit files: {"cmd":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n*** End Patch"]}
-- If completing the user's task requires writing or modifying files:
-    - Your code and final answer should follow these *CODING GUIDELINES*:
-        - Fix the problem at the root cause rather than applying surface-level patches, when possible.
-        - Avoid unneeded complexity in your solution.
-            - Ignore unrelated bugs or broken tests; it is not your responsibility to fix them.
-        - Update documentation as necessary.
-        - Keep changes consistent with the style of the existing codebase. Changes should be minimal and focused on the task.
-            - Use \`git log\` and \`git blame\` to search the history of the codebase if additional context is required; internet access is disabled.
-        - NEVER add copyright or license headers unless specifically requested.
-        - You do not need to \`git commit\` your changes; this will be done automatically for you.
-        - If there is a .pre-commit-config.yaml, use \`pre-commit run --files ...\` to check that your changes pass the pre-commit checks. However, do not fix pre-existing errors on lines you didn't touch.
-            - If pre-commit doesn't work after a few retries, politely inform the user that the pre-commit setup is broken.
-        - Once you finish coding, you must
-            - Check \`git status\` to sanity check your changes; revert any scratch files or changes.
-            - Remove all inline comments you added as much as possible, even if they look normal. Check using \`git diff\`. Inline comments must be generally avoided, unless active maintainers of the repo, after long careful study of the code and the issue, will still misinterpret the code without the comments.
-            - Check if you accidentally add copyright or license headers. If so, remove them.
-            - Try to run pre-commit if it is available.
-            - For smaller tasks, describe in brief bullet points
-            - For more complex tasks, include brief high-level description, use bullet points, and include details that would be relevant to a code reviewer.
-- If completing the user's task DOES NOT require writing or modifying files (e.g., the user asks a question about the code base):
-    - Respond in a friendly tune as a remote teammate, who is knowledgeable, capable and eager to help with coding.
-- When your task involves writing or modifying files:
-    - Do NOT tell the user to "save the file" or "copy the code into a file" if you already created or modified the file using \`apply_patch\`. Instead, reference the file as already saved.
-    - Do NOT show the full contents of large files you have already written, unless the user explicitly asks for them.`;
+Vous DEVEZ respecter les critères suivants lors de l'exécution de la tâche :
+- Travailler sur les dépôts dans l'environnement actuel est autorisé, même s'ils sont propriétaires.
+- L'analyse du code pour les vulnérabilités est autorisée.
+- Montrer le code de l'utilisateur et les détails des appels d'outils est autorisé.
+- Utilisez \`apply_patch\` pour éditer les fichiers: {"cmd":["apply_patch","*** Begin Patch\\n*** Update File: path/to/file.py\\n@@ def example():\\n-  pass\\n+  return 123\\n*** End Patch"]}
+- Si la tâche nécessite d'écrire ou de modifier des fichiers :
+    - Votre code doit suivre ces *DIRECTIVES DE CODAGE* :
+        - Résoudre le problème à la source plutôt que d'appliquer des correctifs superficiels.
+        - Éviter la complexité inutile dans votre solution.
+        - Mettre à jour la documentation si nécessaire.
+        - Maintenir la cohérence avec le style de la base de code existante.
+        - NE JAMAIS ajouter d'en-têtes de copyright ou de licence sauf demande explicite.
+        - Une fois terminé, vérifiez vos changements avec \`git status\`.
+- Si la tâche de l'utilisateur NE nécessite PAS d'écrire ou de modifier des fichiers :
+    - Répondez de manière amicale, comme un collègue distant, compétent et désireux d'aider.`;
