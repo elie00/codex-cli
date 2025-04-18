@@ -41,6 +41,76 @@ Once started, you can interact naturally with the AI assistant:
 - `/ollama` or `/o` - Configure Ollama integration
 - `/history` - View command history
 
+## Ollama Configuration
+
+### Prerequisites
+
+1. **Install Ollama**:
+   - For macOS/Linux: `curl -fsSL https://ollama.com/install.sh | sh`
+   - For Windows: Download from [Ollama's website](https://ollama.com/download)
+
+2. **Start Ollama Service**:
+   ```bash
+   ollama serve
+   ```
+   Ollama runs by default on `http://localhost:11434`
+
+### Setting Up Models
+
+1. **Pull a model** (first time only):
+   ```bash
+   ollama pull llama3
+   # Other popular models: cogito:8b, gemma3:4b, gemma3:12b, mistral-small3.1
+   ```
+
+2. **List available models**:
+   ```bash
+   ollama list
+   ```
+
+### Configuring Codex CLI for Ollama
+
+Codex CLI can be configured through `~/.config/codex-cli/config.json`:
+
+```json
+{
+  "providerType": "ollama",                    // Use Ollama as the provider
+  "providerUrl": "http://localhost:11434",     // Ollama API endpoint
+  "defaultModel": "cogito:8b",                 // Default model to use
+  "approvalPolicy": "suggest",                 // Command approval policy
+  "theme": "matrix"                            // Use Matrix theme
+}
+```
+
+You can also specify these settings when launching:
+
+```bash
+codex-cli --provider ollama --model llama3
+```
+
+### Model Parameters
+
+You can customize model parameters using the `/ollama` command within Codex CLI or by creating a `~/.ollama/config.json` file:
+
+```json
+{
+  "models": {
+    "cogito:8b": {
+      "temperature": 0.7,
+      "top_p": 0.9,
+      "context_window": 8192
+    }
+  }
+}
+```
+
+### Troubleshooting Ollama
+
+- **Connection issues**: Ensure Ollama is running with `ps aux | grep ollama`
+- **Model not found**: Verify the model is downloaded with `ollama list`
+- **Slow responses**: Check system resources or try a smaller model
+- **Permission errors**: Ensure proper permissions for the Ollama directories
+
 ## Configuration
 
 Codex CLI can be configured through environment variables or a config file located at `~/.config/codex-cli/config.json`:
